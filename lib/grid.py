@@ -92,7 +92,7 @@ class GridGraph:
 
     def add_n_inactives(self, n: int):
         """Adds n inactive squares to the map, ensuring that there is always at least 1 path from initial to goal"""
-        path = set(self.find_path_dfs(random_neighbor=True))
+        path = set(self.find_path_greedy_semirandom_bfs())
         inactives_set = set()
         all_possibe = [
             (i, j)
@@ -111,6 +111,30 @@ class GridGraph:
             n = len(all_possibe)
         inactives_set = random.sample(all_possibe, n)
         for i, j in inactives_set:
+            self.at(i, j).change_state(CellState.INACTIVE)
+
+    def make_n_paths(self, n: int):
+        """
+        Marks most of the squares as inactives, but leaves at least n random paths from source to dest
+        """
+        path = set()
+        for _ in range(n):
+            path.update(self.find_path_greedy_semirandom_bfs(0.84))
+
+        all_possibe = [
+            (i, j)
+            for i in range(self._height)
+            for j in range(self._width)
+            if (i, j) not in path
+            and self.at(i, j).state
+            not in {
+                CellState.CURRENT,
+                CellState.GOAL,
+                CellState.INACTIVE,
+            }
+        ]
+
+        for i, j in all_possibe:
             self.at(i, j).change_state(CellState.INACTIVE)
 
     def at(self, row: int, col: int) -> Cell:
@@ -257,3 +281,107 @@ class GridGraph:
                         ),
                     )
         return None  # didnt found a path to the goal
+
+    def find_path_greedy_semirandom_bfs(
+        self, random_ratio: float = 0.65
+    ) -> list[tuple[int, int]]:
+        """finds a path from current to goal.
+
+        half greedy half random: when pickhing which node to visit next, sometimes pick a random one
+        returns the coordinates of the visited nodes."""
+
+        @dataclass(order=True)
+        class PrioritizedNeighbor:
+            distance: int
+            position: tuple[int, int]
+
+        # contains node, previous
+        path: list[tuple[int, int]] = []
+        visited = set()
+
+        # queue
+        to_visit = [
+            PrioritizedNeighbor(
+                manhattan_distance(self._current, self._goal),
+                self._current,
+            )
+        ]
+        steps = 0
+        while to_visit:
+            steps += 1
+            # if random.random() > random_ratio:
+            if steps > 10:
+                # use node with best heuristic
+                current = heapq.heappop(to_visit).position
+            else:
+                # random node in the list to visit
+                current = to_visit.pop(random.randrange(len(to_visit))).position
+                # may have been de-heaped
+                heapq.heapify(to_visit)
+
+            # visit current
+            path.append(current)
+
+            if current == self._goal:
+                # found the goal!
+                return path
+
+            # queue all neighbors
+            for neighbor in self.neighbors(*current):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    # keep to_visit sorted by manhattan distance to the goal
+                    heapq.heappush(
+                        to_visit,
+                        PrioritizedNeighbor(
+                            manhattan_distance(neighbor, self._goal),
+                            neighbor,
+                        ),
+                    )
+        return None  # didnt found a path to the goal
+
+
+def find_path_greedy_bfs(self) -> list[tuple[int, int]]:
+    """finds a path from current to goal.
+    returns the coordinates of the visited nodes."""
+
+    @dataclass(order=True)
+    class PrioritizedNeighbor:
+        distance: int
+        position: tuple[int, int]
+
+    # contains node, previous
+    path: list[tuple[int, int]] = []
+    visited = set()
+
+    # queue
+    to_visit = [
+        PrioritizedNeighbor(
+            manhattan_distance(self._current, self._goal),
+            self._current,
+        )
+    ]
+
+    while to_visit:
+        current = heapq.heappop(to_visit).position
+
+        # visit current
+        path.append(current)
+
+        if current == self._goal:
+            # found the goal!
+            return path
+
+        # queue all neighbors
+        for neighbor in self.neighbors(*current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                # keep to_visit sorted by manhattan distance to the goal
+                heapq.heappush(
+                    to_visit,
+                    PrioritizedNeighbor(
+                        manhattan_distance(neighbor, self._goal),
+                        neighbor,
+                    ),
+                )
+    return None  # didnt found a path to the goal

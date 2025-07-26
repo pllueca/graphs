@@ -2,7 +2,7 @@ import argparse
 import arcade
 import random
 
-random.seed(42)
+# random.seed(42)
 
 from lib.grid import GridGraph, CellState
 
@@ -17,7 +17,7 @@ MARGIN = 5  # Margin between cells in pixels
 # Calculate screen dimensions based on the grid
 SCREEN_WIDTH = (CELL_SIZE + MARGIN) * GRID_COLS + MARGIN
 SCREEN_HEIGHT = (CELL_SIZE + MARGIN) * GRID_ROWS + MARGIN
-SCREEN_TITLE = "Active/Inactive Grid Game"
+SCREEN_TITLE = "grid search algorithms."
 
 # --- Color Constants ---
 CELL_STATE_TO_COLOR = {
@@ -61,14 +61,21 @@ class MyGame(arcade.Window):
             inactives=None,
         )
 
-        self.grid.add_n_inactives(inactives)
+        if inactives > 0:
+            self.grid.add_n_inactives(inactives)
+        elif inactives < 0:
+            self.grid.make_n_paths(abs(inactives))
 
         if algorithm == "bfs":
             self.path_to_goal = self.grid.find_path_bfs()
         elif algorithm == "dfs":
             self.path_to_goal = self.grid.find_path_dfs()
-        if algorithm == "greedy_bfs":
+        elif algorithm == "greedy_bfs":
             self.path_to_goal = self.grid.find_path_greedy_bfs()
+        elif algorithm == "greedy_random_bfs":
+            self.path_to_goal = self.grid.find_path_greedy_semirandom_bfs()
+        else:
+            raise ValueError(f"algorithm {algorithm} not supported")
 
         self.step = 0
         if self.path_to_goal is not None:
