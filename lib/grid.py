@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
 import random
+import heapq
+
+from .distance_utils import manhattan_distance
 
 
 class CellState(Enum):
@@ -82,11 +85,33 @@ class GridGraph:
                     if self.at(i, j).state not in {CellState.CURRENT, CellState.GOAL}:
                         inactives_list.append((i, j))
                 inactives = inactives_list
-            print(inactives)
             if isinstance(inactives, list):
                 # list of positions to mark as inactive
                 for i, j in inactives:
                     self.at(i, j).change_state(CellState.INACTIVE)
+
+    def add_n_inactives(self, n: int):
+        """Adds n inactive squares to the map, ensuring that there is always at least 1 path from initial to goal"""
+        path = set(self.find_path_dfs(random_neighbor=True))
+        inactives_set = set()
+        all_possibe = [
+            (i, j)
+            for i in range(self._height)
+            for j in range(self._width)
+            if (i, j) not in path
+            and self.at(i, j).state
+            not in {
+                CellState.CURRENT,
+                CellState.GOAL,
+                CellState.INACTIVE,
+            }
+        ]
+
+        if n > len(all_possibe):
+            n = len(all_possibe)
+        inactives_set = random.sample(all_possibe, n)
+        for i, j in inactives_set:
+            self.at(i, j).change_state(CellState.INACTIVE)
 
     def at(self, row: int, col: int) -> Cell:
         return self._cells[col][row]
@@ -134,7 +159,8 @@ class GridGraph:
         """finds a path from current to goal.
         returns the coordinates of the visited nodes."""
 
-        path = []
+        # contains node, previous
+        path: list[tuple[int, int]] = []
         visited = set()
 
         # queue
@@ -156,10 +182,9 @@ class GridGraph:
                     visited.add(neighbor)
                     to_visit.insert(0, neighbor)
 
-        # visited all the accesible nodes, didnt found path :(
-        return path
+        return None  # didnt found a path to the goal
 
-    def find_path_dfs(self) -> list[tuple[int, int]]:
+    def find_path_dfs(self, *, random_neighbor: bool = True) -> list[tuple[int, int]]:
         """finds a path from current to goal.
         returns the coordinates of the visited nodes."""
 
@@ -180,10 +205,55 @@ class GridGraph:
                 return path
 
             # queue all neighbors
-            for neighbor in self.neighbors(*current):
+            for neighbor in self.neighbors(*current, shuffle=random_neighbor):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     to_visit.append(neighbor)
 
         # visited all the accesible nodes, didnt found path :(
-        return path
+        return None  # didnt found a path to the goal
+
+    def find_path_greedy_bfs(self) -> list[tuple[int, int]]:
+        """finds a path from current to goal.
+        returns the coordinates of the visited nodes."""
+
+        @dataclass(order=True)
+        class PrioritizedNeighbor:
+            distance: int
+            position: tuple[int, int]
+
+        # contains node, previous
+        path: list[tuple[int, int]] = []
+        visited = set()
+
+        # queue
+        to_visit = [
+            PrioritizedNeighbor(
+                manhattan_distance(self._current, self._goal),
+                self._current,
+            )
+        ]
+
+        while to_visit:
+            current = heapq.heappop(to_visit).position
+
+            # visit current
+            path.append(current)
+
+            if current == self._goal:
+                # found the goal!
+                return path
+
+            # queue all neighbors
+            for neighbor in self.neighbors(*current):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    # keep to_visit sorted by manhattan distance to the goal
+                    heapq.heappush(
+                        to_visit,
+                        PrioritizedNeighbor(
+                            manhattan_distance(neighbor, self._goal),
+                            neighbor,
+                        ),
+                    )
+        return None  # didnt found a path to the goal

@@ -1,6 +1,8 @@
+import argparse
 import arcade
 import random
 
+random.seed(42)
 
 from lib.grid import GridGraph, CellState
 
@@ -45,6 +47,8 @@ class MyGame(arcade.Window):
         title: str,
         initial_position: tuple[int, int],
         goal_position: tuple[int, int],
+        algorithm: str = "bfs",
+        inactives: int = 300,
     ):
         super().__init__(width, height, title)
         arcade.set_background_color(BACKGROUND_COLOR)
@@ -54,15 +58,24 @@ class MyGame(arcade.Window):
             GRID_ROWS,
             initial_position,
             goal_position,
-            inactives=150,
+            inactives=None,
         )
 
-        # self.path_to_goal = self.grid.find_path_bfs()
-        self.path_to_goal = self.grid.find_path_dfs()
+        self.grid.add_n_inactives(inactives)
 
-        print(f"getting to goal is {len(self.path_to_goal)} steps")
+        if algorithm == "bfs":
+            self.path_to_goal = self.grid.find_path_bfs()
+        elif algorithm == "dfs":
+            self.path_to_goal = self.grid.find_path_dfs()
+        if algorithm == "greedy_bfs":
+            self.path_to_goal = self.grid.find_path_greedy_bfs()
+
         self.step = 0
-        self.click = False
+        if self.path_to_goal is not None:
+            print(f"getting to goal is {len(self.path_to_goal)} steps")
+            self.steps_to_goal = len(self.path_to_goal)
+        else:
+            print("no path to the goal")
 
     def on_draw(self):
         """
@@ -93,11 +106,11 @@ class MyGame(arcade.Window):
         Normally, you'll call update() on the sprite lists that
         need it.
         """
-        # if not self.click:
-        #     return
+        if self.path_to_goal is None or self.step >= self.steps_to_goal:
+            return
+
         self.grid.set_current(*self.path_to_goal[self.step])
         self.step += 1
-        self.click = False
 
     def on_key_press(self, key, key_modifiers):
         """
@@ -109,9 +122,27 @@ class MyGame(arcade.Window):
         self.click = True
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--initial", type=int, nargs=2, default=[1, 1])
+    parser.add_argument("--algorithm", default="bfs")
+    parser.add_argument("--inactives", type=int, default=100)
+    return parser.parse_args()
+
+
 def main():
     """Main function to set up and run the game."""
-    game = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, (1, 1), (15, 25))
+    args = parse_args()
+
+    game = MyGame(
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        SCREEN_TITLE,
+        tuple(args.initial),
+        (15, 25),
+        algorithm=args.algorithm,
+        inactives=args.inactives,
+    )
     arcade.run()
 
 
