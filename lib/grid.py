@@ -1,14 +1,16 @@
 from dataclasses import dataclass, field
-from enum import Enum, auto
+import json
+from enum import IntEnum, auto
 import random
 import heapq
 
 from .distance_utils import manhattan_distance
 
 
-class CellState(Enum):
+class CellState(IntEnum):
     ACTIVE = auto()
     INACTIVE = auto()
+    SLOW = auto()
     CURRENT = auto()
     VISITED = auto()
     GOAL = auto()
@@ -35,23 +37,34 @@ class Cell:
         self.prev_state = self.state
         self.state = CellState.CURRENT
 
-    def revert_current(self):
-        if self.state != CellState.CURRENT:
-            raise Exception("should be current")
-        if not self.prev_state:
-            raise Exception("no prev state")
-        self.state = self.prev_state
-
     def make_goal(self):
         self.prev_state = self.state
         self.state = CellState.GOAL
 
-    def revert_goal(self):
-        if self.state != CellState.GOAL:
-            raise Exception("should be goal")
-        if not self.prev_state:
-            raise Exception("no prev state")
-        self.state = self.prev_state
+    def flip_active(self):
+        """Asume cell is either active or inactive"""
+        (
+            self.change_state(CellState.ACTIVE)
+            if self.state == CellState.INACTIVE
+            else self.change_state(CellState.INACTIVE)
+        )
+
+    def cell_cost(self) -> int:
+        match self.state:
+            case CellState.ACTIVE | CellState.CURRENT | CellState.GOAL:
+                return 1
+            case CellState.SLOW:
+                return 5
+            case _:
+                raise Exception()
+
+
+@dataclass(order=True)
+class PrioritizedNeighbor:
+    """Used in priority queues to sort neighbors by distance to goal."""
+
+    distance: int
+    position: tuple[int, int]
 
 
 class GridGraph:
@@ -62,7 +75,7 @@ class GridGraph:
         height: int,
         initial_position: tuple[int, int] | None = None,
         goal_position: tuple[int, int] | None = None,
-        inactives: None | int | list[tuple[int, int]] = None,
+        inactives: list[tuple[int, int]] = None,
     ) -> None:
         self._cells = [[Cell() for _ in range(height)] for _ in range(width)]
         self._current = None
@@ -77,18 +90,11 @@ class GridGraph:
             self.at(*goal_position).make_goal()
 
         if inactives is not None:
-            if isinstance(inactives, int):
-                inactives_list = []
-                while len(inactives_list) < inactives:
-                    i = random.randint(0, self._height - 1)
-                    j = random.randint(0, self._width - 1)
-                    if self.at(i, j).state not in {CellState.CURRENT, CellState.GOAL}:
-                        inactives_list.append((i, j))
-                inactives = inactives_list
-            if isinstance(inactives, list):
-                # list of positions to mark as inactive
-                for i, j in inactives:
-                    self.at(i, j).change_state(CellState.INACTIVE)
+            for i, j in inactives:
+                self.at(i, j).change_state(CellState.INACTIVE)
+
+    def path_cost(self, path: list[tuple[int, int]]):
+        return sum([self.at(i, j).cell_cost() for i, j in path])
 
     def add_n_inactives(self, n: int):
         """Adds n inactive squares to the map, ensuring that there is always at least 1 path from initial to goal"""
@@ -241,11 +247,6 @@ class GridGraph:
         """finds a path from current to goal.
         returns the coordinates of the visited nodes."""
 
-        @dataclass(order=True)
-        class PrioritizedNeighbor:
-            distance: int
-            position: tuple[int, int]
-
         # contains node, previous
         path: list[tuple[int, int]] = []
         visited = set()
@@ -289,11 +290,6 @@ class GridGraph:
 
         half greedy half random: when pickhing which node to visit next, sometimes pick a random one
         returns the coordinates of the visited nodes."""
-
-        @dataclass(order=True)
-        class PrioritizedNeighbor:
-            distance: int
-            position: tuple[int, int]
 
         # contains node, previous
         path: list[tuple[int, int]] = []
@@ -340,48 +336,66 @@ class GridGraph:
                     )
         return None  # didnt found a path to the goal
 
+    def find_path_greedy_bfs(self) -> list[tuple[int, int]]:
+        """finds a path from current to goal.
+        returns the coordinates of the visited nodes."""
 
-def find_path_greedy_bfs(self) -> list[tuple[int, int]]:
-    """finds a path from current to goal.
-    returns the coordinates of the visited nodes."""
+        # contains node, previous
+        path: list[tuple[int, int]] = []
+        visited = set()
 
-    @dataclass(order=True)
-    class PrioritizedNeighbor:
-        distance: int
-        position: tuple[int, int]
+        # queue
+        to_visit = [
+            PrioritizedNeighbor(
+                manhattan_distance(self._current, self._goal),
+                self._current,
+            )
+        ]
 
-    # contains node, previous
-    path: list[tuple[int, int]] = []
-    visited = set()
+        while to_visit:
+            current = heapq.heappop(to_visit).position
 
-    # queue
-    to_visit = [
-        PrioritizedNeighbor(
-            manhattan_distance(self._current, self._goal),
-            self._current,
+            # visit current
+            path.append(current)
+
+            if current == self._goal:
+                # found the goal!
+                return path
+
+            # queue all neighbors
+            for neighbor in self.neighbors(*current):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    # keep to_visit sorted by manhattan distance to the goal
+                    heapq.heappush(
+                        to_visit,
+                        PrioritizedNeighbor(
+                            manhattan_distance(neighbor, self._goal),
+                            neighbor,
+                        ),
+                    )
+        return None  # didnt found a path to the goal
+
+    def to_dict(self) -> dict:
+        """Serialize the grid to a dictionary."""
+        return {
+            "width": self._width,
+            "height": self._height,
+            "cells": [[cell.state.name for cell in col] for col in self._cells],
+            "current": self._current,
+            "goal": self._goal,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Deserialize a grid from a dictionary."""
+        grid = cls(
+            width=data["width"],
+            height=data["height"],
+            initial_position=data.get("current"),
+            goal_position=data.get("goal"),
         )
-    ]
-
-    while to_visit:
-        current = heapq.heappop(to_visit).position
-
-        # visit current
-        path.append(current)
-
-        if current == self._goal:
-            # found the goal!
-            return path
-
-        # queue all neighbors
-        for neighbor in self.neighbors(*current):
-            if neighbor not in visited:
-                visited.add(neighbor)
-                # keep to_visit sorted by manhattan distance to the goal
-                heapq.heappush(
-                    to_visit,
-                    PrioritizedNeighbor(
-                        manhattan_distance(neighbor, self._goal),
-                        neighbor,
-                    ),
-                )
-    return None  # didnt found a path to the goal
+        for col_idx, col in enumerate(data["cells"]):
+            for row_idx, state_name in enumerate(col):
+                grid._cells[col_idx][row_idx].state = CellState[state_name]
+        return grid

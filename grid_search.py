@@ -1,10 +1,13 @@
 import argparse
 import arcade
 import random
+from pathlib import Path
+from enum import Enum, auto
 
 # random.seed(42)
 
 from lib.grid import GridGraph, CellState
+from lib.persistence import save_grid_to_json, load_grid_from_json
 
 # --- Grid and Cell Constants ---
 GRID_ROWS = 20  # Number of rows (N)
@@ -26,6 +29,7 @@ CELL_STATE_TO_COLOR = {
     CellState.CURRENT: arcade.color.BLUE,
     CellState.VISITED: arcade.color.DARK_BLUE,
     CellState.GOAL: arcade.color.YELLOW,
+    CellState.SLOW: arcade.color.PURPLE,
 }
 
 BACKGROUND_COLOR = arcade.color.BLACK
@@ -33,6 +37,11 @@ UNKNOWN_COLOR = arcade.color.WHITE
 
 # 4-way movement
 DIRECTIONS = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+
+
+class GameMode(Enum):
+    SEARCH = auto()
+    EDIT = auto()
 
 
 class MyGame(arcade.Window):
@@ -45,42 +54,39 @@ class MyGame(arcade.Window):
         width: int,
         height: int,
         title: str,
-        initial_position: tuple[int, int],
-        goal_position: tuple[int, int],
+        grid: GridGraph,
         algorithm: str = "bfs",
-        inactives: int = 300,
     ):
         super().__init__(width, height, title)
         arcade.set_background_color(BACKGROUND_COLOR)
+        self.grid: GridGraph = grid
+        self.game_mode: GameMode = GameMode.SEARCH
+        self.click: bool = False
+        self.algorithm = algorithm
+        self.cells_changed = False
 
-        self.grid = GridGraph(
-            GRID_COLS,
-            GRID_ROWS,
-            initial_position,
-            goal_position,
-            inactives=None,
-        )
+        self.compute_path()
 
-        if inactives > 0:
-            self.grid.add_n_inactives(inactives)
-        elif inactives < 0:
-            self.grid.make_n_paths(abs(inactives))
-
-        if algorithm == "bfs":
-            self.path_to_goal = self.grid.find_path_bfs()
-        elif algorithm == "dfs":
-            self.path_to_goal = self.grid.find_path_dfs()
-        elif algorithm == "greedy_bfs":
-            self.path_to_goal = self.grid.find_path_greedy_bfs()
-        elif algorithm == "greedy_random_bfs":
-            self.path_to_goal = self.grid.find_path_greedy_semirandom_bfs()
-        else:
-            raise ValueError(f"algorithm {algorithm} not supported")
+    def compute_path(self) -> None:
+        match self.algorithm:
+            case "bfs":
+                self.path_to_goal = self.grid.find_path_bfs()
+            case "dfs":
+                self.path_to_goal = self.grid.find_path_dfs()
+            case "greedy_bfs":
+                self.path_to_goal = self.grid.find_path_greedy_bfs()
+            case "greedy_random_bfs":
+                self.path_to_goal = self.grid.find_path_greedy_semirandom_bfs()
+            case _:
+                raise ValueError(f"algorithm {self.algorithm} not supported")
 
         self.step = 0
         if self.path_to_goal is not None:
-            print(f"getting to goal is {len(self.path_to_goal)} steps")
             self.steps_to_goal = len(self.path_to_goal)
+            self.path_cost = self.grid.path_cost(self.path_to_goal)
+            print(
+                f"getting to goal is {len(self.path_to_goal)} steps, cost: {self.path_cost}"
+            )
         else:
             print("no path to the goal")
 
@@ -113,11 +119,13 @@ class MyGame(arcade.Window):
         Normally, you'll call update() on the sprite lists that
         need it.
         """
-        if self.path_to_goal is None or self.step >= self.steps_to_goal:
-            return
-
-        self.grid.set_current(*self.path_to_goal[self.step])
-        self.step += 1
+        if self.game_mode == GameMode.SEARCH:
+            if self.click:
+                if self.path_to_goal is None or self.step >= self.steps_to_goal:
+                    return
+                self.grid.set_current(*self.path_to_goal[self.step])
+                self.step += 1
+            self.click = False
 
     def on_key_press(self, key, key_modifiers):
         """
@@ -126,7 +134,37 @@ class MyGame(arcade.Window):
         For a full list of keys, see:
         https://api.arcade.academy/en/latest/arcade.key.html
         """
-        self.click = True
+        match key:
+            case arcade.key.ESCAPE:
+                arcade.close_window()
+            case arcade.key.E:
+                self.game_mode = GameMode.EDIT
+                self.cells_changed = False
+            case arcade.key.S:
+                self.game_mode = GameMode.SEARCH
+                if self.cells_changed:
+                    self.compute_path()
+            case arcade.key.SPACE:
+                if self.game_mode == GameMode.SEARCH:
+                    self.click = True
+
+    def on_mouse_press(self, x, y, button, key_modifiers):
+        """
+        If in search mode, advance a step. if in edit mode, flip the current tile from active to inactive.
+        """
+        match self.game_mode:
+            case GameMode.SEARCH:
+                self.click = True
+
+            case GameMode.EDIT:
+                grid_tile_i, grid_tile_j = self.mouse_position_to_tile(x, y)
+                self.grid.at(grid_tile_i, grid_tile_j).flip_active()
+                self.cells_changed = True
+
+    def mouse_position_to_tile(self, x, y) -> tuple[int, int]:
+        col = (x - MARGIN) // (CELL_SIZE + MARGIN)
+        row = (y - MARGIN) // (CELL_SIZE + MARGIN)
+        return int(row), int(col)
 
 
 def parse_args():
@@ -134,6 +172,18 @@ def parse_args():
     parser.add_argument("--initial", type=int, nargs=2, default=[1, 1])
     parser.add_argument("--algorithm", default="bfs")
     parser.add_argument("--inactives", type=int, default=100)
+    parser.add_argument(
+        "--load",
+        type=str,
+        default=None,
+        help="Path to grid JSON file",
+    )
+    parser.add_argument(
+        "--save",
+        type=str,
+        default=None,
+        help="If not None, path to save grid JSON file",
+    )
     return parser.parse_args()
 
 
@@ -141,14 +191,38 @@ def main():
     """Main function to set up and run the game."""
     args = parse_args()
 
+    if args.load is not None:
+        grid = load_grid_from_json(args.load)
+    else:
+        goal_position = 15, 25
+        initial_position = tuple(args.initial)
+        inactives = args.inactives
+        grid = GridGraph(
+            GRID_COLS,
+            GRID_ROWS,
+            initial_position=initial_position,
+            goal_position=goal_position,
+        )
+
+        if inactives > 0:
+            grid.add_n_inactives(inactives)
+        elif inactives < 0:
+            grid.make_n_paths(abs(inactives))
+
+    if args.save is not None:
+        psave = Path(args.save)
+        if psave.exists():
+            raise FileExistsError(f"File {psave} already exists.")
+        elif not psave.parent.exists():
+            raise FileNotFoundError(f"Parent directory {psave.parent} does not exist.")
+        save_grid_to_json(grid, str(psave))
+
     game = MyGame(
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         SCREEN_TITLE,
-        tuple(args.initial),
-        (15, 25),
+        grid=grid,
         algorithm=args.algorithm,
-        inactives=args.inactives,
     )
     arcade.run()
 
