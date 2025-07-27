@@ -38,6 +38,8 @@ UNKNOWN_COLOR = arcade.color.WHITE
 # 4-way movement
 DIRECTIONS = [(0, 1), (1, 0), (0, -1), (-1, 0)]
 
+AUTOSTEP_EVERY : float = 0.25
+
 
 class GameMode(Enum):
     SEARCH = auto()
@@ -49,6 +51,15 @@ class MyGame(arcade.Window):
     Main application class for drawing the grid.
     """
 
+    grid          : GridGraph
+    game_mode     : GameMode
+    algorithm     : str
+    cells_changed : bool
+
+    autoplay        : bool
+    should_step     : bool
+    time_since_step : float
+
     def __init__(
         self,
         width: int,
@@ -59,11 +70,15 @@ class MyGame(arcade.Window):
     ):
         super().__init__(width, height, title)
         arcade.set_background_color(BACKGROUND_COLOR)
-        self.grid: GridGraph = grid
-        self.game_mode: GameMode = GameMode.SEARCH
-        self.click: bool = False
-        self.algorithm = algorithm
+
+        self.grid          = grid
+        self.game_mode     = GameMode.SEARCH
+        self.algorithm     = algorithm
         self.cells_changed = False
+
+        self.autoplay        = False
+        self.should_step     = False
+        self.time_since_step = 0.0
 
         self.compute_path()
 
@@ -90,7 +105,7 @@ class MyGame(arcade.Window):
         else:
             print("no path to the goal")
 
-    def on_draw(self):
+    def on_draw(self) -> None:
         """
         Render the screen.
         """
@@ -113,21 +128,28 @@ class MyGame(arcade.Window):
                     color,
                 )
 
-    def on_update(self, delta_time):
+    def on_update(self, delta_time: float) -> None:
         """
         All the logic to move, and the game logic goes here.
         Normally, you'll call update() on the sprite lists that
         need it.
         """
         if self.game_mode == GameMode.SEARCH:
-            if self.click:
+            self.time_since_step += delta_time
+
+            if self.autoplay and self.time_since_step > AUTOSTEP_EVERY:
+                self.should_step = True
+
+            if self.should_step:
                 if self.path_to_goal is None or self.step >= self.steps_to_goal:
                     return
                 self.grid.set_current(*self.path_to_goal[self.step])
                 self.step += 1
-            self.click = False
+                self.time_since_step = 0.0
 
-    def on_key_press(self, key, key_modifiers):
+            self.should_step = False
+
+    def on_key_press(self, key, key_modifiers) -> None:
         """
         Called whenever a key on the keyboard is pressed.
 
@@ -137,24 +159,30 @@ class MyGame(arcade.Window):
         match key:
             case arcade.key.ESCAPE:
                 arcade.close_window()
+
             case arcade.key.E:
                 self.game_mode = GameMode.EDIT
                 self.cells_changed = False
+
             case arcade.key.S:
                 self.game_mode = GameMode.SEARCH
                 if self.cells_changed:
                     self.compute_path()
+
             case arcade.key.SPACE:
                 if self.game_mode == GameMode.SEARCH:
-                    self.click = True
+                    self.should_step = True
 
-    def on_mouse_press(self, x, y, button, key_modifiers):
+            case arcade.key.P:
+                self.autoplay = not self.autoplay
+
+    def on_mouse_press(self, x, y, button, key_modifiers) -> None:
         """
         If in search mode, advance a step. if in edit mode, flip the current tile from active to inactive.
         """
         match self.game_mode:
             case GameMode.SEARCH:
-                self.click = True
+                self.should_step = True
 
             case GameMode.EDIT:
                 grid_tile_i, grid_tile_j = self.mouse_position_to_tile(x, y)
@@ -167,7 +195,7 @@ class MyGame(arcade.Window):
         return int(row), int(col)
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--initial", type=int, nargs=2, default=[1, 1])
     parser.add_argument("--algorithm", default="bfs")
@@ -187,7 +215,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     """Main function to set up and run the game."""
     args = parse_args()
 
