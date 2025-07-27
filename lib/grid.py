@@ -68,7 +68,6 @@ class PrioritizedNeighbor:
 
 
 class GridGraph:
-
     def __init__(
         self,
         width: int,

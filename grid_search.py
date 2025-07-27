@@ -1,7 +1,6 @@
 import argparse
 import arcade
 import random
-from pathlib import Path
 from enum import Enum, auto
 
 # random.seed(42)
@@ -38,7 +37,7 @@ UNKNOWN_COLOR = arcade.color.WHITE
 # 4-way movement
 DIRECTIONS = [(0, 1), (1, 0), (0, -1), (-1, 0)]
 
-AUTOSTEP_EVERY : float = 0.25
+AUTOSTEP_EVERY: float = 0.25
 
 
 class GameMode(Enum):
@@ -51,14 +50,14 @@ class MyGame(arcade.Window):
     Main application class for drawing the grid.
     """
 
-    grid          : GridGraph
-    game_mode     : GameMode
-    algorithm     : str
-    cells_changed : bool
+    grid: GridGraph
+    game_mode: GameMode
+    algorithm: str
+    cells_changed: bool
 
-    autoplay        : bool
-    should_step     : bool
-    time_since_step : float
+    autoplay: bool
+    should_step: bool
+    time_since_step: float
 
     def __init__(
         self,
@@ -71,13 +70,13 @@ class MyGame(arcade.Window):
         super().__init__(width, height, title)
         arcade.set_background_color(BACKGROUND_COLOR)
 
-        self.grid          = grid
-        self.game_mode     = GameMode.SEARCH
-        self.algorithm     = algorithm
+        self.grid = grid
+        self.game_mode = GameMode.SEARCH
+        self.algorithm = algorithm
         self.cells_changed = False
 
-        self.autoplay        = False
-        self.should_step     = False
+        self.autoplay = False
+        self.should_step = False
         self.time_since_step = 0.0
 
         self.compute_path()
@@ -168,7 +167,8 @@ class MyGame(arcade.Window):
                 self.game_mode = GameMode.SEARCH
                 if self.cells_changed:
                     self.compute_path()
-
+            case arcade.key.W:
+                save_grid_to_json(self.grid)
             case arcade.key.SPACE:
                 if self.game_mode == GameMode.SEARCH:
                     self.should_step = True
@@ -238,12 +238,7 @@ def main() -> None:
             grid.make_n_paths(abs(inactives))
 
     if args.save is not None:
-        psave = Path(args.save)
-        if psave.exists():
-            raise FileExistsError(f"File {psave} already exists.")
-        elif not psave.parent.exists():
-            raise FileNotFoundError(f"Parent directory {psave.parent} does not exist.")
-        save_grid_to_json(grid, str(psave))
+        save_grid_to_json(grid, args.save)
 
     game = MyGame(
         SCREEN_WIDTH,

@@ -6,7 +6,6 @@ from .base_graph import Graph
 
 @dataclass
 class DirectedGraph(Graph):
-
     @classmethod
     def from_edge_list(cls, n: int, edges: list[tuple[int, int]]):
         """Construct a graph from a list of edges."""
