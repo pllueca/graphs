@@ -1,7 +1,6 @@
 import argparse
 import arcade
 import random
-from pathlib import Path
 from enum import Enum, auto
 
 # random.seed(42)
@@ -144,6 +143,9 @@ class MyGame(arcade.Window):
                 self.game_mode = GameMode.SEARCH
                 if self.cells_changed:
                     self.compute_path()
+            case arcade.key.W:
+                save_grid_to_json(self.grid)
+
             case arcade.key.SPACE:
                 if self.game_mode == GameMode.SEARCH:
                     self.click = True
@@ -210,12 +212,7 @@ def main():
             grid.make_n_paths(abs(inactives))
 
     if args.save is not None:
-        psave = Path(args.save)
-        if psave.exists():
-            raise FileExistsError(f"File {psave} already exists.")
-        elif not psave.parent.exists():
-            raise FileNotFoundError(f"Parent directory {psave.parent} does not exist.")
-        save_grid_to_json(grid, str(psave))
+        save_grid_to_json(grid, args.save)
 
     game = MyGame(
         SCREEN_WIDTH,
